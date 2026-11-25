@@ -247,11 +247,15 @@ opencode                            # in any project — uses ollama/gemma4-code
   `opencode.json` to `http://biswajits-mac-mini.local:11434/v1` (stable mDNS name —
   preferred over the dynamic IP `192.168.178.218`) — works because the script exposes
   Ollama on `0.0.0.0:11434`.
-- ⚠️ **Context:** agent harnesses want large contexts, but on 24 GB a 16 GB model +
-  64K KV cache does not fit (that is what made `gemma4-code` fail with memory errors).
-  `gemma4-code` now uses **`num_ctx 32768`** — the max that fits alongside
-  gemma4:26b in 24 GB. If you need more context, switch to `gemma4:12b`-based
-  variants instead of raising `num_ctx` on the 26b.
+- ⚠️ **Context is the #1 reason local models "can't read files" in OpenCode.**
+  Base models load with Ollama's default **4K context** — OpenCode's system prompt +
+  tool definitions alone exceed that, so tool calls fail/truncate and the model
+  seems unable to read code. Always use a **`-ctx` variant with pinned `num_ctx`**:
+  `gemma4-code` (32K), `gpt-oss-ctx` (32K), `devstral-ctx` (16K — 19 GB model).
+  On 24 GB a 16 GB model + 64K KV cache does not fit (that is what made the old
+  64K `gemma4-code` fail with memory errors). Check with `ollama ps` →
+  `context_length` should show your pinned value, and PROCESSOR **100% GPU**.
+- In OpenCode, pick the variant with `/models` (e.g. `ollama/devstral-ctx`).
 - Verify it's local: while OpenCode works, `ollama ps` on the mini shows the model at
   **100% GPU**; `/models` in OpenCode shows `ollama/...`.
 

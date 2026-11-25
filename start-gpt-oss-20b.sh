@@ -9,9 +9,9 @@ source "$OLLAMA_DIR/ollama-common.sh"
 
 MODEL="gpt-oss:20b"
 BIND="0.0.0.0"
-VARIANT_NAME=""
-VARIANT_NUM_CTX=""
-VARIANT_TEMP=""
+VARIANT_NAME="gpt-oss-ctx"
+VARIANT_NUM_CTX="${NUM_CTX:-32768}"   # 14 GB model: 32K ctx fits 24 GB
+VARIANT_TEMP="0.2"
 
 case "${1:-}" in
   --stop)  stop_all; exit 0 ;;

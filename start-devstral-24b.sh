@@ -9,9 +9,9 @@ source "$OLLAMA_DIR/ollama-common.sh"
 
 MODEL="devstral:24b"
 BIND="0.0.0.0"
-VARIANT_NAME=""
-VARIANT_NUM_CTX=""
-VARIANT_TEMP=""
+VARIANT_NAME="devstral-ctx"
+VARIANT_NUM_CTX="${NUM_CTX:-16384}"   # 19 GB model: 16K ctx cap so the KV cache fits 24 GB
+VARIANT_TEMP="0.2"
 
 case "${1:-}" in
   --stop)  stop_all; exit 0 ;;
