@@ -10,13 +10,20 @@ window that shows the URL + model name and cannot be closed while the model is r
 
 ```
 ~/ollama/
-├── start-ollama.sh                # the script (executable)
+├── ollama-common.sh               # shared library sourced by all start-*.sh scripts
+├── ollama-watchdog.sh             # status-window watchdog (own process, pkill-able)
+├── start-ollama.sh                # gemma4:26b (default) / gemma4-code (--code); --local/--stop
+├── start-gemma4-code.sh           # gemma4:26b + 32K-context code variant (memory-safe)
+├── start-gpt-oss-20b.sh           # daily driver (14 GB)
+├── start-devstral-24b.sh          # agent harness (14 GB)
+├── start-qwen3-coder-30b.sh       # 19 GB coder, creates qwen3-coder-ctx (16K ctx cap)
+├── start-gemma4-12b.sh            # small/fast (8 GB)
 ├── README.md                      # this file
 ├── logs/ollama-serve.log          # server + status-window logs
 ├── ollama-serve.pid               # PID of the server started by the script
 ├── ollama-status-watch.pid        # PID of the watchdog
-├── ollama-status-window.js        # generated AppleScript/JXA status window
-└── modelfiles/                    # created when using --code (gemma4-code.Modelfile)
+├── ollama-status-window.js        # generated JXA status window (gitignored)
+└── modelfiles/                    # created per variant (e.g. gemma4-code.Modelfile)
 ```
 
 ---
@@ -24,11 +31,25 @@ window that shows the URL + model name and cannot be closed while the model is r
 ## 2. Running the script
 
 ```bash
-~/ollama/start-ollama.sh           # start server (if needed) + pull & warm gemma4:26b + LAN expose + status window
-~/ollama/start-ollama.sh --local   # same, but bound to 127.0.0.1 only (no LAN exposure)
-~/ollama/start-ollama.sh --code    # also create "gemma4-code" (64K context, temp 0.2) and warm that instead
-~/ollama/start-ollama.sh --stop    # stop server + watchdog + status window
+# one script per model (all support --local and --stop):
+~/ollama/start-ollama.sh           # gemma4:26b  (default)
+~/ollama/start-ollama.sh --code    # gemma4-code variant of gemma4:26b (see memory note below)
+~/ollama/start-gemma4-code.sh      # same as --code, dedicated script
+~/ollama/start-gpt-oss-20b.sh      # 14 GB daily driver
+~/ollama/start-devstral-24b.sh     # 14 GB agent harness
+~/ollama/start-qwen3-coder-30b.sh  # 19 GB coder -> creates qwen3-coder-ctx with 16K ctx cap
+~/ollama/start-gemma4-12b.sh       # 8 GB small/fast
+# every script also accepts:
+~/ollama/start-*.sh --local        # bind 127.0.0.1 only (no LAN exposure)
+~/ollama/start-*.sh --stop         # stop server + watchdog + status window
 ```
+
+> **Memory note (24 GB):** context length costs KV-cache memory on top of the model
+> weights. `gemma4:26b` (~16 GB) + 64K context does **not** fit — that was the
+> `gemma4-code` OOM. The code variant now uses **`num_ctx 32768`** (override with
+> `NUM_CTX=16384 ./start-ollama.sh --code`), and `qwen3-coder:30b` gets a 16K cap.
+> Rule of thumb on 24 GB: keep `num_ctx` ≤ 32K for ~16 GB models, ≤ 16K for ~19 GB
+> models. Verify with `ollama ps` — PROCESSOR must be **100% GPU**.
 
 ### What the script does, step by step
 
@@ -45,9 +66,8 @@ window that shows the URL + model name and cannot be closed while the model is r
    - Optional: `OLLAMA_ORIGINS="*"` — only needed if **browser** apps on other machines
      call the API (CLI clients don't need it)
 3. **Pulls `gemma4:26b`** if not already present (~16 GB one-time download).
-4. **`--code`**: creates `gemma4-code` from a Modelfile (`num_ctx 65536`,
-   `temperature 0.2`) and warms that instead — use this for coding agents, which need
-   ≥64K context.
+4. **Code variants**: scripts like `start-gemma4-code.sh` create a Modelfile variant
+   (`num_ctx 32768`, `temperature 0.2` — sized to fit 24 GB) and warm that instead.
 5. **Warms the model** with a tiny request so it is loaded into memory immediately.
 6. **Opens the desktop status window** and starts the **watchdog** (see §5).
 
@@ -129,8 +149,10 @@ window that shows the URL + model name and cannot be closed while the model is r
   `OLLAMA_HOST` hint for other computers.
 - The window is created **without a close button** (no `NSWindowStyleMaskClosable`) and
   pinned **always-on-top** (`NSFloatingWindowLevel`).
-- A **watchdog** checks every 5 s that the server is up **and** the model is loaded
-  (`ollama ps`). If the window is killed by any means, it is **re-opened within 5 s**.
+- A **watchdog** (`ollama-watchdog.sh`, its own process so `--stop` can kill it
+  reliably) checks every 5 s that the server is up **and** the model is loaded
+  (`ollama ps`, full model-name match). If the window is killed by any means, it is
+  **re-opened within 5 s**.
 - The watchdog also re-reads the Mac's **current LAN IP** every 5 s; if it changed, the
   window is rebuilt with the **new URL** — so the desktop always shows the address your
   other laptop should use right now.
@@ -174,13 +196,16 @@ work), `gemma4:31b` (19–20 GB, tight, ~8 tok/s), `qwen3.6:35b` (23 GB — does
 
 ### Coding-agent tips
 
-- Always set a big context. Default is small on 24 GB. Use `--code` (creates
-  `gemma4-code` with `num_ctx 65536`), or a Modelfile:
+- Set a context that FITS. Default is small on 24 GB, but too-large contexts OOM.
+  Use `./start-gemma4-code.sh` (creates `gemma4-code` with `num_ctx 32768`), or a
+  Modelfile:
   ```
   FROM gemma4:26b
-  PARAMETER num_ctx 65536
+  PARAMETER num_ctx 32768
   PARAMETER temperature 0.2
   ```
+  64K context only fits if the model is small enough (e.g. gemma4:12b); on gemma4:26b
+  it exhausts the 24 GB and the model offloads or fails to load.
 - Keep the model warm: `OLLAMA_KEEP_ALIVE=30m` (set by the script).
 - Check `ollama ps` — PROCESSOR must be **100% GPU**.
 
@@ -222,9 +247,11 @@ opencode                            # in any project — uses ollama/gemma4-code
   `opencode.json` to `http://biswajits-mac-mini.local:11434/v1` (stable mDNS name —
   preferred over the dynamic IP `192.168.178.218`) — works because the script exposes
   Ollama on `0.0.0.0:11434`.
-- ⚠️ **Context:** OpenCode needs **≥ 64K tokens**. Ollama auto-sizes context from free
-  memory (can be as low as 32K on 24 GB), which breaks agent sessions. Always use
-  **`gemma4-code`** (built by `--code` with `PARAMETER num_ctx 65536`) for agent work.
+- ⚠️ **Context:** agent harnesses want large contexts, but on 24 GB a 16 GB model +
+  64K KV cache does not fit (that is what made `gemma4-code` fail with memory errors).
+  `gemma4-code` now uses **`num_ctx 32768`** — the max that fits alongside
+  gemma4:26b in 24 GB. If you need more context, switch to `gemma4:12b`-based
+  variants instead of raising `num_ctx` on the 26b.
 - Verify it's local: while OpenCode works, `ollama ps` on the mini shows the model at
   **100% GPU**; `/models` in OpenCode shows `ollama/...`.
 
@@ -278,4 +305,17 @@ Cosmos-Predict2 / Cosmos 3 Text2Image, not Nemotron.
 
 ---
 
-*Last updated: 2026-11-24 · Mac mini M6 24 GB · Ollama v0.40.x · macOS 27*
+## 12. Recent changes
+
+- Refactor: shared `ollama-common.sh` + `ollama-watchdog.sh`; one `start-<model>.sh` per model
+- Bug fixes: warm-up failure no longer aborts the script; `--stop` reliably kills the
+  watchdog even without its pidfile; concurrent runs blocked via `flock`; generated
+  window JS escapes quotes/backslashes; watchdog matches the full model name; LAN IP
+  detection tries en0–en5
+- Memory fix: `gemma4-code` context reduced 65536 → **32768** (64K KV cache OOMed on
+  24 GB); `qwen3-coder:30b` variant capped at 16K; `OLLAMA_MAX_LOADED_MODELS=1`
+- `ollama-status-window.js`, `.lock` are runtime artifacts (gitignored)
+
+---
+
+*Last updated: 2026-11-25 · Mac mini M6 24 GB · Ollama v0.40.x · macOS 27*
