@@ -11,18 +11,35 @@ LOG="$OLLAMA_DIR/logs/ollama-serve.log"
 PIDFILE="$OLLAMA_DIR/ollama-serve.pid"
 WATCHPID="$OLLAMA_DIR/ollama-status-watch.pid"
 WINJS="$OLLAMA_DIR/ollama-status-window.js"
-LOCKFILE="$OLLAMA_DIR/.lock"
 API="http://127.0.0.1:${PORT}"
 
 log() { echo "==> $*"; }
 
 # --- locking (fix: concurrent runs spawned duplicate watchdogs/windows) --------
+# Portable lock: `mkdir` is atomic on macOS (no flock binary here). Stale-lock
+# recovery: if the recorded PID is dead, remove the lock dir and retry once.
+LOCKDIR="$OLLAMA_DIR/.lock.d"
+SCRIPT_NAME="${SCRIPT_NAME:-$0}"
+# Top-level EXIT trap (a trap set INSIDE a zsh function fires at function return).
+# Only the lock holder removes the lock dir.
+trap '[[ -f "$LOCKDIR/pid" && "$(cat "$LOCKDIR/pid" 2>/dev/null)" == "$$" ]] && rm -rf "$LOCKDIR"' EXIT
+
 with_lock() {
-  exec 9>"$LOCKFILE"
-  if ! flock -n 9; then
-    echo "==> Another start script holds $LOCKFILE. If it is stale, run: $0 --stop" >&2
-    exit 1
-  fi
+  local tries=0 oldpid
+  while ! mkdir "$LOCKDIR" 2>/dev/null; do
+    oldpid=$(cat "$LOCKDIR/pid" 2>/dev/null || true)
+    if [[ -n "$oldpid" ]] && ! kill -0 "$oldpid" 2>/dev/null; then
+      rm -rf "$LOCKDIR"          # stale lock: holder process is dead
+      continue
+    fi
+    tries=$((tries + 1))
+    if [[ $tries -ge 2 ]]; then
+      echo "==> Another start script holds $LOCKDIR (pid ${oldpid:-?}). If stale: rm -rf $LOCKDIR; or run: $SCRIPT_NAME --stop" >&2
+      exit 1
+    fi
+    sleep 1
+  done
+  echo $$ >"$LOCKDIR/pid"
 }
 
 # --- LAN IP (fix: try en0..en5, not just en0/en1) -------------------------------

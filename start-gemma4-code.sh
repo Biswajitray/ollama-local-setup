@@ -4,6 +4,7 @@
 # Usage: ./start-gemma4-code.sh [--local|--stop]   (shared logic: ollama-common.sh; see README.md §2)
 set -euo pipefail
 OLLAMA_DIR="${OLLAMA_DIR:-$HOME/ollama}"
+SCRIPT_NAME="$0"   # entry script path, before sourcing (zsh: $0 inside sourced file = that file)
 source "$OLLAMA_DIR/ollama-common.sh"
 
 MODEL="gemma4:26b"

@@ -3,4 +3,4 @@ logs/
 
 # Generated at runtime
 ollama-status-window.js
-.lock
+.lock.d/

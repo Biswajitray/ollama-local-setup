@@ -10,6 +10,7 @@ set -u  # deliberately no -e: the loop must survive transient curl/ollama failur
 
 OLLAMA_DIR="${OLLAMA_DIR:-$HOME/ollama}"
 PORT="${PORT:-11434}"
+SCRIPT_NAME="$0"   # entry script path, before sourcing (zsh: $0 inside sourced file = that file)
 source "$OLLAMA_DIR/ollama-common.sh"
 : "${MODEL:?MODEL env var required}"
 BIND="${BIND:-0.0.0.0}"
